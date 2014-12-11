@@ -5,6 +5,9 @@ module.exports = Document = function(opts) {
     this._versions = []
     this._scopes = []
     if(opts.getHandle) this._getHandle = opts.getHandle
+
+    this._writing = false
+    this._writes = []
 }
 
 Document.prototype.get = function(key) {
@@ -12,6 +15,25 @@ Document.prototype.get = function(key) {
 }
 
 Document.prototype.set = function(key, val) {
+    this._writes.push({key: key, val: val})
+    this._doWrites()
+}
+
+Document.prototype._doWrites = function() {
+    if(this._writing)
+        return
+
+    this._writing = true
+
+    while(this._writes.length > 0) {
+        var kv = this._writes.shift()
+        this._setInternal(kv.key, kv.val)
+    }
+
+    this._writing = false
+}
+
+Document.prototype._setInternal = function(key, val) {
     var path = parseKey(key)
 
     var next = this._store.setIn(path, val)
