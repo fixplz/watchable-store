@@ -1,8 +1,10 @@
 var test = require('tape')
+var inspect = require('util').inspect
+
 test.Test.prototype.equalVal = function(a, b, message) {
-    this.assert(
-        Imm.is(Imm.fromJS(a), Imm.fromJS(b)),
-        message || "should be value equal")
+    a = Imm.fromJS(a); if(a.toJS) a = a.toJS()
+    b = Imm.fromJS(b); if(b.toJS) b = b.toJS()
+    this.deepEqual(a, b, message)
 }
 
 
@@ -12,30 +14,34 @@ var Store = require('./')
 test('get set', function(t) {
     var store = new Store()
 
-    t.equalVal(store.history(), [])
-    t.equalVal(store.getAll(), {})
+    t.equalVal(store.history(), [], 'history is empty')
+    t.equalVal(store.getAll(), {}, 'store is empty')
 
     store.set('abc', 123)
-    store.set('def', Imm.Map({ prop: 'beepboop' }))
+    store.set('def', Imm.Map({ a: 'beepboop' }))
 
-    t.equalVal(store.get('abc'), 123)
-    t.equalVal(store.get('def'), { prop: 'beepboop' })
-    t.equalVal(store.getAll(), { abc: 123, def: { prop: 'beepboop' } })
+    t.equalVal(store.get('abc'), 123, 'get')
+    t.equalVal(store.get('def'), { a: 'beepboop' }, 'get map')
+    t.equalVal(store.getAll(), { abc: 123, def: { a: 'beepboop' } }, 'getAll')
 
-    t.equalVal(store.history(), [{}, { abc: 123 }])
+    t.equalVal(store.history(), [{}, { abc: 123 }], 'history')
 
-    store.set('def', Imm.Map({ prop: 'beepboop' }))
+    store.set('def', Imm.Map({ a: 'beep', b: 'boop' }))
 
-    t.equalVal(store.history(), [{}, { abc: 123 }])
+    t.equalVal(store.get('def'), { a: 'beep', b: 'boop' }, 'get 2')
 
-    store.set('def', { prop: 'beep', prop2: 'boop' })
-    store.set('def', { prop: 'boop', prop2: 'beep' })
+    store.set('def.a', 'boop')
+    store.set('def.b', 'beep')
 
-    t.equalVal(store.get('def'), { prop: 'boop', prop2: 'beep' })
+    t.equalVal(store.get('def'), { a: 'boop', b: 'beep' }, 'get 3')
 
     t.equalVal(store.history('def'),
-        [ { prop: "beepboop" },
-          { prop: "beep", prop2: "boop" } ])
+        [ { a: 'beepboop' }, { a: 'beep', b: 'boop' }, { a: 'boop', b: 'boop' } ],
+        'history 2')
+
+    store.set('def.c.d', Imm.Map({ e: 'zap' }))
+
+    t.equalVal(store.get('def.c.d.e'), 'zap', 'get 4')
 
     t.end()
 })
@@ -47,16 +53,16 @@ test('handles', function(t) {
     var events2 = []
     var events3 = []
 
-    store.watch('',    function(val) { events1.push(val) })
-    store.watch('def', function(val) { events2.push(val) })
-    store.watch('abc', function(val) { events3.push(val) })
+    store.watch('x',    function(val) { events1.push(val) })
+    store.watch('x.abc', function(val) { events2.push(val) })
+    store.watch('x.def', function(val) { events3.push(val) })
 
-    store.set('def', 123)
-    store.set('abc', 456)
+    store.set('x.abc', 123)
+    store.set('x.def', 456)
 
-    t.equalVal(events1, [{def: 123}, {def:123, abc:456}])
-    t.equalVal(events2, [123])
-    t.equalVal(events3, [456])
+    t.equalVal(events1, [{abc: 123}, {abc:123, def:456}], 'watcher 1')
+    t.equalVal(events2, [123], 'watcher 2')
+    t.equalVal(events3, [456], 'watcher 3')
 
     t.end()
 })
