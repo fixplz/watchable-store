@@ -1,83 +1,100 @@
 var Imm = require('immutable')
 
-module.exports = Store = function(initial) {
-    this._store = new Imm.Map()
-    this._versions = []
-    this._watchers = []
+module.exports = Store
 
-    this._notify = []
-    this._inNotifyLoop = false
+function Store(initial) {
+    if(! (this instanceof Store))
+        return new Store(initial)
 
-    if(initial)
-        this.set('', initial)
+    initStore(this)
+
+    if(initial != null)
+        this.setAll(initial)
 }
 
-Store.prototype.get = function(key) {
-    return this._store.getIn(parseKey(key))
-}
+function initStore (me) {
+    var store = new Imm.Map()
+    var versions = []
+    var watchers = []
 
-Store.prototype.set = function(key, val) {
-    key = parseKey(key)
+    var notifyList = []
+    var inNotifyLoop = false
 
-    var lastStore = this._store
-    var newStore = this._store.setIn(key, val)
-
-    if(Imm.is(newStore, lastStore))
-        return
-
-    this._versions.push(lastStore)
-    this._store = newStore
-
-    this._watchers.forEach(function(watcher) {
-        var watchKey = getWatcherKey(watcher.key)
-        if(pathIsPrefix(watchKey, key) || pathIsPrefix(key, watchKey))
-            this._notify.push(watcher)
-    }.bind(this))
-
-    if(this._inNotifyLoop)
-        return
-
-    this._inNotifyLoop = true
-
-    while(this._notify.length > 0) {
-        var watcher = this._notify.shift()
-        var watchKey = getWatcherKey(watcher.key)
-        if(! Imm.is(lastStore.getIn(watchKey), newStore.getIn(watchKey)))
-            watcher.func(newStore.getIn(watchKey))
+    me.get = function (key) {
+        return store.getIn(parseKey(key))
     }
 
-    this._inNotifyLoop = false
-}
+    me.set = function (key, val) {
+        key = parseKey(key)
 
-Store.prototype.history = function(key) {
-    key = parseKey(key)
+        var lastStore = store
+        var newStore = store.setIn(key, val)
 
-    var arr = []
-    var last
-    this._versions.forEach(function(ver) {
-        var val = ver.getIn(key)
-        if(! Imm.is(val, last))
-            arr.push(val)
-        last = val
-    })
+        if(Imm.is(newStore, lastStore))
+            return
 
-    return arr
-}
+        versions.push(lastStore)
+        store = newStore
 
-Store.prototype.watch = function(key, func) {
-    this._watchers.push({ key: key, func: func })
-}
+        watchers.forEach(function(watcher) {
+            var watchKey = getWatcherKey(watcher.key)
+            if(pathIsPrefix(watchKey, key) || pathIsPrefix(key, watchKey))
+                notifyList.push(watcher)
+        })
 
-Store.prototype.unwatch = function(key, func) {
-    var index
-    this._watchers.some(function(watcher, ix) {
-        if(getWatcherKey(watcher.key).join('.') == key && watcher.func == func) {
-            index = ix
-            return true
+        if(inNotifyLoop)
+            return
+
+        inNotifyLoop = true
+
+        while(notifyList.length > 0) {
+            var watcher = notifyList.shift()
+            var watchKey = getWatcherKey(watcher.key)
+            if(! Imm.is(lastStore.getIn(watchKey), newStore.getIn(watchKey)))
+                watcher.func(newStore.getIn(watchKey))
         }
-    })
 
-    if(index) this._watchers.splice(index, 1)
+        inNotifyLoop = false
+    }
+
+    me.getAll = function () {
+        return store
+    }
+
+    me.setAll = function (val) {
+        me.set([], val)
+    }
+
+    me.history = function(key) {
+        key = key != null ? parseKey(key) : []
+
+        var arr = []
+        var last
+        versions.forEach(function(ver) {
+            var val = ver.getIn(key)
+            if(! Imm.is(val, last))
+                arr.push(val)
+            last = val
+        })
+
+        return arr
+    }
+
+    me.watch = function(key, func) {
+        watchers.push({ key: key, func: func })
+    }
+
+    me.unwatch = function(key, func) {
+        var index
+        watchers.some(function(watcher, ix) {
+            if(getWatcherKey(watcher.key).join('.') == key && watcher.func == func) {
+                index = ix
+                return true
+            }
+        })
+
+        if(index) watchers.splice(index, 1)
+    }
 }
 
 
@@ -89,8 +106,11 @@ function parseKey(key) {
             return frag
         })
     }
+    else if(Array.isArray(key)) {
+        return key
+    }
     else {
-        return key || []
+        throw new Error('invalid key ' + key)
     }
 }
 

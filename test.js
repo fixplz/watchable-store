@@ -13,14 +13,14 @@ test('get set', function(t) {
     var store = new Store()
 
     t.equalVal(store.history(), [])
-    t.equalVal(store.get(), {})
+    t.equalVal(store.getAll(), {})
 
     store.set('abc', 123)
     store.set('def', Imm.Map({ prop: 'beepboop' }))
 
     t.equalVal(store.get('abc'), 123)
     t.equalVal(store.get('def'), { prop: 'beepboop' })
-    t.equalVal(store.get(), { abc: 123, def: { prop: 'beepboop' } })
+    t.equalVal(store.getAll(), { abc: 123, def: { prop: 'beepboop' } })
 
     t.equalVal(store.history(), [{}, { abc: 123 }])
 
