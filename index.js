@@ -1,111 +1,89 @@
-var Immutable = require('immutable')
+var Imm = require('immutable')
 
-module.exports = Document = function(opts) {
-    this._store = new Immutable.Map()
+module.exports = Store = function(initial) {
+    this._store = new Imm.Map()
     this._versions = []
-    this._scopes = []
-    if(opts.getHandle) this._getHandle = opts.getHandle
+    this._watchers = []
 
-    this._writing = false
-    this._writes = []
+    this._notify = []
+    this._inNotifyLoop = false
+
+    if(initial)
+        this.set('', initial)
 }
 
-Document.prototype.get = function(key) {
+Store.prototype.get = function(key) {
     return this._store.getIn(parseKey(key))
 }
 
-Document.prototype.set = function(key, val) {
-    this._writes.push({key: key, val: val})
-    this._doWrites()
-}
+Store.prototype.set = function(key, val) {
+    key = parseKey(key)
 
-Document.prototype._doWrites = function() {
-    if(this._writing)
+    var lastStore = this._store
+    var newStore = this._store.setIn(key, val)
+
+    if(Imm.is(newStore, lastStore))
         return
 
-    this._writing = true
+    this._versions.push(lastStore)
+    this._store = newStore
 
-    while(this._writes.length > 0) {
-        var kv = this._writes.shift()
-        this._setInternal(kv.key, kv.val)
+    this._watchers.forEach(function(watcher) {
+        var watchKey = getWatcherKey(watcher.key)
+        if(pathIsPrefix(watchKey, key) || pathIsPrefix(key, watchKey))
+            this._notify.push(watcher)
+    }.bind(this))
+
+    if(this._inNotifyLoop)
+        return
+
+    this._inNotifyLoop = true
+
+    while(this._notify.length > 0) {
+        var watcher = this._notify.shift()
+        var watchKey = getWatcherKey(watcher.key)
+        if(! Imm.is(lastStore.getIn(watchKey), newStore.getIn(watchKey)))
+            watcher.func(newStore.getIn(watchKey))
     }
 
-    this._writing = false
+    this._inNotifyLoop = false
 }
 
-Document.prototype._setInternal = function(key, val) {
-    var path = parseKey(key)
-
-    var next = this._store.setIn(path, val)
-
-    if(next == this._store)
-        return
-
-    this._versions.push(this._store)
-    this._store = next
-
-    this._scopes = this._scopes.filter(function(scope) { return ! pathIsParent(path, scope._path) })
-
-    this._scopes.forEach(function(scope) {
-        if(pathIsPrefix(scope._path, path))
-            scope._run(path)
-    })
-}
-
-Document.prototype.history = function(key) {
-    var path = parseKey(key)
+Store.prototype.history = function(key) {
+    key = parseKey(key)
 
     var arr = []
     var last
     this._versions.forEach(function(ver) {
-        var val = ver.getIn(path)
-        if(val && val != last)
-            arr.push(ver.getIn())
+        var val = ver.getIn(key)
+        if(! Imm.is(val, last))
+            arr.push(val)
         last = val
     })
 
     return arr
 }
 
-Document.prototype.scope = function(key) {
-    var scope = new Scope(key, this)
-    this._scopes.push(scope)
-    return scope
+Store.prototype.watch = function(key, func) {
+    this._watchers.push({ key: key, func: func })
 }
 
-Document.Scope = Scope = function(key, doc) {
-    this._doc = doc
-    this._path = parseKey(key)
-    this._watch = []
-}
-
-Scope.prototype.handle = function(key) {
-    var path = parseKey(key)
-
-    var watcher
-    this._watch.some(function(w) { 
-        return pathEqual(path, w.path) && (watcher = w)
+Store.prototype.unwatch = function(key, func) {
+    var index
+    this._watchers.some(function(watcher, ix) {
+        if(getWatcherKey(watcher.key).join('.') == key && watcher.func == func) {
+            index = ix
+            return true
+        }
     })
 
-    if(watcher)
-        return watcher.sink
-    
-    watcher = { path: path, sink: null }
-    this._watch.push(watcher)
-
-    return this._doc._getHandle(key, function(sink) { watcher.sink = sink })
-}
-
-Scope.prototype._run = function(path) {
-    this._watch.forEach(function(w) {
-        if(pathIsPrefix(path, w.path))
-            w.sink(this._doc.get(w.path))
-    }.bind(this))
+    if(index) this._watchers.splice(index, 1)
 }
 
 
 function parseKey(key) {
     if(typeof key == 'string') {
+        if(key == '') return []
         return key.split(/\s*\.\s*/g).map(function(frag) {
             if(! /^\w+$/.test(frag)) throw new Error('invalid path' + key)
             return frag
@@ -114,6 +92,10 @@ function parseKey(key) {
     else {
         return key || []
     }
+}
+
+function getWatcherKey (key) {
+    return parseKey(typeof key == 'function' ? key() : key)
 }
 
 function pathEqual(keypath, subkeypath) {
