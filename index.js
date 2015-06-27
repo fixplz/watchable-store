@@ -115,20 +115,29 @@ function setPath (source, path, innerVal) {
         return innerVal
 
     var key = path[0]
-    var newVal = setPath(source != null ? source[key] : null, path.slice(1), innerVal)
+    var subval = source != null ? source[key] : null
+    var newval = setPath(subval, path.slice(1), innerVal)
 
-    if(source != null && source[key] == newVal)
-        return obj
+    if(source == null) {
+        var target = {}
+        target[key] = newval
+        return target
+    }
+    else {
+        if(subval == newval)
+            return source
 
-    var target = Array.isArray(source) ? [] : {}
+        if(Array.isArray(source))
+            var target = source.slice()
+        else {
+            var target = {}
+            Object.keys(source).forEach(function (key) {
+                target[key] = source[key] })
+        }
 
-    if(source != null)
-        Object.keys(source).forEach(function (key) {
-            target[key] = source[key] })
-
-    target[key] = newVal
-
-    return target
+        target[key] = newval
+        return target
+    }
 }
 
 function getKey(key) {
