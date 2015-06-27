@@ -1,47 +1,41 @@
 var test = require('tape')
-var inspect = require('util').inspect
 
-test.Test.prototype.equalVal = function(a, b, message) {
-    a = Imm.fromJS(a); if(a.toJS) a = a.toJS()
-    b = Imm.fromJS(b); if(b.toJS) b = b.toJS()
-    this.deepEqual(a, b, message)
-}
-
-
-var Imm = require('immutable')
 var Store = require('./')
 
 test('get set', function(t) {
     var store = new Store()
 
-    t.equalVal(store.history(), [], 'history is empty')
-    t.equalVal(store.getAll(), {}, 'store is empty')
+    t.deepEqual(store.get(), {}, 'store is empty')
 
     store.set('abc', 123)
-    store.set('def', Imm.Map({ a: 'beepboop' }))
+    store.set('def', { a: 'beepboop' })
 
-    t.equalVal(store.get('abc'), 123, 'get')
-    t.equalVal(store.get('def'), { a: 'beepboop' }, 'get map')
-    t.equalVal(store.getAll(), { abc: 123, def: { a: 'beepboop' } }, 'getAll')
+    t.deepEqual(store.get('abc'), 123, 'get set')
+    t.deepEqual(store.get('def'), { a: 'beepboop' }, 'get set')
+    t.deepEqual(store.get(), { abc: 123, def: { a: 'beepboop' } }, 'get set')
 
-    t.equalVal(store.history(), [{}, { abc: 123 }], 'history')
+    store.set('def', { a: 'beep', b: 'boop' })
 
-    store.set('def', Imm.Map({ a: 'beep', b: 'boop' }))
-
-    t.equalVal(store.get('def'), { a: 'beep', b: 'boop' }, 'get 2')
+    t.deepEqual(store.get('def'), { a: 'beep', b: 'boop' }, 'get set')
 
     store.set('def.a', 'boop')
     store.set('def.b', 'beep')
 
-    t.equalVal(store.get('def'), { a: 'boop', b: 'beep' }, 'get 3')
+    t.deepEqual(store.get('def'), { a: 'boop', b: 'beep' }, 'get set')
 
-    t.equalVal(store.history('def'),
-        [ { a: 'beepboop' }, { a: 'beep', b: 'boop' }, { a: 'boop', b: 'boop' } ],
-        'history 2')
+    store.set('def.c.d', { e: 'zap' })
 
-    store.set('def.c.d', Imm.Map({ e: 'zap' }))
+    t.deepEqual(store.get('def.c.d.e'), 'zap', 'get set')
 
-    t.equalVal(store.get('def.c.d.e'), 'zap', 'get 4')
+    store.update('def.c.d', function (it) {
+        return { e: 'zip ' + it.e }
+    })
+
+    t.deepEqual(store.get('def.c.d.e'), 'zip zap', 'get set')
+
+    store.set({})
+
+    t.deepEqual(store.get(), {}, 'store is emptied')
 
     t.end()
 })
@@ -60,9 +54,9 @@ test('handles', function(t) {
     store.set('x.abc', 123)
     store.set('x.def', 456)
 
-    t.equalVal(events1, [{abc: 123}, {abc:123, def:456}], 'watcher 1')
-    t.equalVal(events2, [123], 'watcher 2')
-    t.equalVal(events3, [456], 'watcher 3')
+    t.deepEqual(events1, [{abc: 123}, {abc:123, def:456}], 'watcher 1')
+    t.deepEqual(events2, [123], 'watcher 2')
+    t.deepEqual(events3, [456], 'watcher 3')
 
     t.end()
 })

@@ -1,40 +1,43 @@
-var Imm = require('immutable')
-
 module.exports = Store
 
 function Store(initial) {
     if(! (this instanceof Store))
         return new Store(initial)
 
-    initStore(this)
-
-    if(initial != null)
-        this.setAll(initial)
+    initStore(this, initial)
 }
 
-function initStore (me) {
-    var store = new Imm.Map()
-    var versions = []
+function initStore (me, initial) {
+    if(initial == null) initial = {}
+
+    var store = initial || []
+
     var watchers = []
 
     var notifyList = []
     var inNotifyLoop = false
 
     me.get = function (key) {
-        return store.getIn(parseKey(key))
+        if(arguments.length == 0) key = []
+
+        return getPath(store, getKey(key))
     }
 
     me.set = function (key, val) {
-        key = parseKey(key)
+        if(arguments.length == 1) {
+            val = arguments[0]
+            key = []
+        }
+
+        key = getKey(key)
 
         var lastStore = store
-        var newStore = store.setIn(key, val)
+        var newStore = setPath(store, key, val)
 
-        if(Imm.is(newStore, lastStore))
-            return
-
-        versions.push(lastStore)
         store = newStore
+
+        if(newStore == lastStore)
+            return
 
         watchers.forEach(function(watcher) {
             var watchKey = getWatcherKey(watcher.key)
@@ -50,34 +53,20 @@ function initStore (me) {
         while(notifyList.length > 0) {
             var watcher = notifyList.shift()
             var watchKey = getWatcherKey(watcher.key)
-            if(! Imm.is(lastStore.getIn(watchKey), newStore.getIn(watchKey)))
-                watcher.func(newStore.getIn(watchKey))
+            if(getPathSoft(lastStore, watchKey) != getPathSoft(newStore, watchKey))
+                watcher.func(getPathSoft(newStore, watchKey))
         }
 
         inNotifyLoop = false
     }
 
-    me.getAll = function () {
-        return store
-    }
+    me.update = function (key, modify) {
+        if(arguments.length == 1) {
+            modify = arguments[0]
+            key = []
+        }
 
-    me.setAll = function (val) {
-        me.set([], val)
-    }
-
-    me.history = function(key) {
-        key = key != null ? parseKey(key) : []
-
-        var arr = []
-        var last
-        versions.forEach(function(ver) {
-            var val = ver.getIn(key)
-            if(! Imm.is(val, last))
-                arr.push(val)
-            last = val
-        })
-
-        return arr
+        me.set(key, modify(me.get(key)))
     }
 
     me.watch = function(key, func) {
@@ -87,35 +76,80 @@ function initStore (me) {
     me.unwatch = function(key, func) {
         var index
         watchers.some(function(watcher, ix) {
-            if(getWatcherKey(watcher.key).join('.') == key && watcher.func == func) {
+            if(getWatcherKey(watcher.key).join('.') == getKey(key).join('.')
+            && watcher.func == func) {
                 index = ix
                 return true
             }
         })
 
-        if(index) watchers.splice(index, 1)
+        if(index != null) watchers.splice(index, 1)
     }
 }
 
 
-function parseKey(key) {
+function getPath (obj, path, soft) {
+    var cur = obj
+
+    var ix = 0
+    while(ix < path.length) {
+        cur = cur[path[ix++]]
+
+        if(cur == null) {
+            if(soft)
+                return null
+            else
+                throw new Error('path not found ' + JSON.stringify(path) + ' in ' + obj)
+        }
+    }
+
+    return cur
+}
+
+function getPathSoft (obj, path) {
+    return getPath(obj, path, true)
+}
+
+function setPath (source, path, innerVal) {
+    if(path.length == 0)
+        return innerVal
+
+    var key = path[0]
+    var newVal = setPath(source != null ? source[key] : null, path.slice(1), innerVal)
+
+    if(source != null && source[key] == newVal)
+        return obj
+
+    var target = Array.isArray(source) ? [] : {}
+
+    if(source != null)
+        Object.keys(source).forEach(function (key) {
+            target[key] = source[key] })
+
+    target[key] = newVal
+
+    return target
+}
+
+function getKey(key) {
+    if(Array.isArray(key))
+        return key
+
     if(typeof key == 'string') {
-        if(key == '') return []
         return key.split(/\s*\.\s*/g).map(function(frag) {
             if(! /^\w+$/.test(frag)) throw new Error('invalid path' + key)
             return frag
         })
     }
-    else if(Array.isArray(key)) {
-        return key
-    }
-    else {
-        throw new Error('invalid key ' + key)
-    }
+
+    if(key != null)
+        return [key]
+
+    throw new Error('invalid key ' + key)
 }
 
 function getWatcherKey (key) {
-    return parseKey(typeof key == 'function' ? key() : key)
+    return getKey(typeof key == 'function' ? key() : key)
 }
 
 function pathEqual(keypath, subkeypath) {
